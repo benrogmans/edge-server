@@ -63,17 +63,17 @@ jobs:
           docker push $IMAGE_NAME:latest
           docker push $IMAGE_NAME:${DATE_TAG}
 
-      - name: Install Cosign
-        run: |
-          curl -Lo cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
-          chmod +x cosign
-          sudo mv cosign /usr/local/bin/cosign
+      # - name: Install Cosign
+      #   run: |
+      #     curl -Lo cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+      #     chmod +x cosign
+      #     sudo mv cosign /usr/local/bin/cosign
 
-      - name: Sign Docker images (keyless)
-        run: |
-          for tag in $SHORT_SHA $ENVIRONMENT latest ${DATE_TAG}; do
-            cosign sign $IMAGE_NAME:$tag
-          done
+      # - name: Sign Docker images (keyless)
+      #   run: |
+      #     for tag in $SHORT_SHA $ENVIRONMENT latest ${DATE_TAG}; do
+      #       cosign sign $IMAGE_NAME:$tag
+      #     done
 
       - name: Collect commit messages
         id: changelog
@@ -92,20 +92,20 @@ jobs:
 
     env:
       DOCKER_CHANGELOG: ${{ needs.docker.outputs.body }}
-      COSIGN_EXPERIMENTAL: "1"
+      # COSIGN_EXPERIMENTAL: "1"
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Butane, coreos-installer, cosign
+      - name: Install Butane, coreos-installer
         run: |
           curl -Lo /usr/local/bin/butane https://github.com/coreos/butane/releases/latest/download/butane-x86_64-unknown-linux-gnu
           chmod +x /usr/local/bin/butane
           curl -Lo /usr/local/bin/coreos-installer https://github.com/coreos/coreos-installer/releases/latest/download/coreos-installer-x86_64-unknown-linux-gnu
           chmod +x /usr/local/bin/coreos-installer
-          curl -Lo cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
-          chmod +x cosign
-          sudo mv cosign /usr/local/bin/cosign
+        # curl -Lo cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+        # chmod +x cosign
+        # sudo mv cosign /usr/local/bin/cosign
 
       - name: Render Ignition config
         env:
@@ -146,10 +146,10 @@ jobs:
             -i artifacts/edge-server-${ENVIRONMENT}.ign \
             -o artifacts/edge-server-${ENVIRONMENT}.iso flatcar.iso
 
-      - name: Sign ISO (keyless)
-        if: steps.compare_ign.outputs.ign_changed == 'true'
-        run: |
-          cosign sign-blob --yes --output-signature artifacts/edge-server-${ENVIRONMENT}.iso.sig artifacts/edge-server-${ENVIRONMENT}.iso
+      # - name: Sign ISO (keyless)
+      #   if: steps.compare_ign.outputs.ign_changed == 'true'
+      #   run: |
+      #     cosign sign-blob --yes --output-signature artifacts/edge-server-${ENVIRONMENT}.iso.sig artifacts/edge-server-${ENVIRONMENT}.iso
 
       - name: Upload to GitHub Release (latest)
         if: steps.compare_ign.outputs.ign_changed == 'true'
@@ -161,7 +161,7 @@ jobs:
           files: |
             artifacts/edge-server-${ENVIRONMENT}.ign
             artifacts/edge-server-${ENVIRONMENT}.iso
-            artifacts/edge-server-${ENVIRONMENT}.iso.sig
+          # artifacts/edge-server-${ENVIRONMENT}.iso.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -175,6 +175,6 @@ jobs:
           files: |
             artifacts/edge-server-${ENVIRONMENT}.ign
             artifacts/edge-server-${ENVIRONMENT}.iso
-            artifacts/edge-server-${ENVIRONMENT}.iso.sig
+          # artifacts/edge-server-${ENVIRONMENT}.iso.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
