@@ -1,0 +1,27 @@
+# Start from official Gleam image
+FROM ghcr.io/gleam-lang/gleam:v1.9.1-elixir
+
+# Set up environment
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /workspace
+
+# Install core build tools
+RUN apt-get update && apt-get install -y \
+  curl \
+  wget \
+  gnupg \
+  unzip \
+  lsb-release \
+  ca-certificates \
+  build-essential \
+  libssl-dev \
+  pkg-config \
+  libelf-dev \
+  liblzma-dev \
+  jq \
+  podman-docker \
+  git \
+  && rm -rf /var/lib/apt/lists/*
+
+# Optional: set shell to bash
+SHELL ["/bin/bash", "-c"]

@@ -1,0 +1,165 @@
+variant: flatcar
+version: 1.1.0
+
+storage:
+  files:
+    - path: /etc/containers/policy.json
+      mode: 0644
+      contents:
+        inline: |
+          {
+            "default": [
+              {
+                "type": "sigstore",
+                "keyless": {
+                  "identities": [
+                    {
+                      "issuer": "https://token.actions.githubusercontent.com",
+                      "subject": "https://github.com/${GHCR_USERNAME}/edge-server/.github/workflows/deploy.yml@refs/heads/${ENVIRONMENT}"
+                    }
+                  ]
+                },
+                "signedIdentity": {
+                  "type": "matchRepository"
+                }
+              }
+            ]
+          }
+
+    - path: /etc/containers/registries.d/default.yaml
+      mode: 0644
+      contents:
+        inline: |
+          docker:
+            sigstore: true
+
+    - path: /etc/logrotate.d/edge
+      mode: 0644
+      contents:
+        inline: |
+          /var/log/edge.log /var/log/netclient.log {
+              daily
+              rotate 7
+              compress
+              missingok
+              notifempty
+              copytruncate
+          }
+
+systemd:
+  units:
+    - name: docker.service
+      enabled: true
+
+    - name: netclient-join.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Join Netmaker mesh (one-time)
+        Wants=network-online.target docker.service
+        After=network-online.target docker.service
+        ConditionPathExists=!/etc/netclient/netconfig
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/docker run --rm \
+          --privileged \
+          --network host \
+          -v /etc/netclient:/etc/netclient \
+          -v /etc/wireguard:/etc/wireguard \
+          -v /lib/modules:/lib/modules:ro \
+          gravitl/netclient:latest \
+          join -t ${NETMAKER_TOKEN} -s ${NETMAKER_SERVER}
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: netclient.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Run Netmaker Netclient Daemon in Docker
+        Requires=docker.service netclient-join.service
+        After=docker.service network-online.target netclient-join.service
+        ConditionPathExists=/etc/netclient/netconfig
+
+        [Service]
+        Restart=always
+        ExecStartPre=-/usr/bin/docker rm -f netclient
+        ExecStart=/usr/bin/docker run --rm --name netclient \
+          --privileged \
+          --network host \
+          -v /etc/netclient:/etc/netclient \
+          -v /etc/wireguard:/etc/wireguard \
+          -v /lib/modules:/lib/modules:ro \
+          gravitl/netclient:latest daemon \
+          > /var/log/netclient.log 2>&1
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: edge.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Run Edge Server container
+        After=docker.service netclient.service
+        Requires=docker.service netclient.service
+
+        [Service]
+        Restart=always
+        ExecStartPre=-/usr/bin/docker rm -f edge-server
+        ExecStart=/bin/bash -c '\
+          HOST=$(${HOSTNAME_SOURCE}); \
+          NODE_NAME="edge-server@$HOST"; \
+          docker run -d --name edge-server \
+            --net=host \
+            -e NODE_NAME=$NODE_NAME \
+            -e COOKIE=${ERLANG_COOKIE} \
+            ghcr.io/${GHCR_USERNAME}/edge-server:${ENVIRONMENT} \
+            > /var/log/edge.log 2>&1'
+        ExecStop=/usr/bin/docker stop edge-server
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: watchtower.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Watchtower for container auto-updates
+        Requires=docker.service
+        After=docker.service
+
+        [Service]
+        Restart=always
+        ExecStart=/usr/bin/docker run --rm --name watchtower \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          containrrr/watchtower \
+          edge-server netclient --cleanup --interval 300
+
+        [Install]
+        WantedBy=multi-user.target
+
+    - name: logrotate.timer
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Daily log rotation
+
+        [Timer]
+        OnCalendar=daily
+        Persistent=true
+
+        [Install]
+        WantedBy=timers.target
+
+    - name: logrotate.service
+      contents: |
+        [Unit]
+        Description=Run logrotate for containers
+        Wants=logrotate.timer
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/sbin/logrotate /etc/logrotate.conf
